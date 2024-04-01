@@ -2,8 +2,8 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
-#[cfg(unix)]
-use std::os::unix::io::{AsFd, AsRawFd, FromRawFd};
+#[cfg(not(windows))]
+use std::os::fd::{AsFd, AsRawFd, FromRawFd};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawSocket, AsSocket, FromRawSocket};
 
@@ -77,8 +77,8 @@ impl<'s> Deref for SockRef<'s> {
 }
 
 /// On Windows, a corresponding `From<&impl AsSocket>` implementation exists.
-#[cfg(unix)]
-#[cfg_attr(docsrs, doc(cfg(unix)))]
+#[cfg(not(windows))]
+#[cfg_attr(docsrs, doc(cfg(not(windows))))]
 impl<'s, S> From<&'s S> for SockRef<'s>
 where
     S: AsFd,

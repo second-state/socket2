@@ -59,11 +59,11 @@
 #![doc(test(attr(deny(warnings))))]
 
 use std::fmt;
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 use std::io::IoSlice;
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 use std::marker::PhantomData;
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 use std::mem;
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
@@ -107,7 +107,7 @@ macro_rules! from {
     ($from: ty, $for: ty) => {
         impl From<$from> for $for {
             fn from(socket: $from) -> $for {
-                #[cfg(unix)]
+                #[cfg(not(windows))]
                 unsafe {
                     <$for>::from_raw_fd(socket.into_raw_fd())
                 }
@@ -170,22 +170,28 @@ macro_rules! man_links {
     };
 }
 
+#[cfg(not(target_os = "wasi"))]
 mod sockaddr;
 mod socket;
 mod sockref;
 
 #[cfg_attr(unix, path = "sys/unix.rs")]
 #[cfg_attr(windows, path = "sys/windows.rs")]
+#[cfg_attr(target_os = "wasi", path = "sys/wasmedge_wasi.rs")]
 mod sys;
 
-#[cfg(not(any(windows, unix)))]
+#[cfg(not(any(windows, unix, target_os = "wasi")))]
 compile_error!("Socket2 doesn't support the compile target");
 
-use sys::c_int;
-
-pub use sockaddr::SockAddr;
 pub use socket::Socket;
 pub use sockref::SockRef;
+
+#[cfg(not(target_os = "wasi"))]
+pub use sockaddr::SockAddr;
+#[cfg(target_os = "wasi")]
+pub use std::net::SocketAddr as SockAddr;
+
+use sys::c_int;
 
 #[cfg(not(any(
     target_os = "haiku",
@@ -215,6 +221,7 @@ impl Domain {
     /// Domain for IPv6 communication, corresponding to `AF_INET6`.
     pub const IPV6: Domain = Domain(sys::AF_INET6);
 
+    #[cfg(not(target_os = "wasi"))]
     /// Domain for Unix socket communication, corresponding to `AF_UNIX`.
     pub const UNIX: Domain = Domain(sys::AF_UNIX);
 
@@ -270,15 +277,24 @@ impl Type {
     pub const DCCP: Type = Type(sys::SOCK_DCCP);
 
     /// Type corresponding to `SOCK_SEQPACKET`.
-    #[cfg(all(feature = "all", not(target_os = "espidf")))]
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "all", not(target_os = "espidf")))))]
+    #[cfg(all(feature = "all", not(target_os = "espidf"), not(target_os = "wasi")))]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(all(feature = "all", not(target_os = "espidf"), not(target_os = "wasi"))))
+    )]
     pub const SEQPACKET: Type = Type(sys::SOCK_SEQPACKET);
 
     /// Type corresponding to `SOCK_RAW`.
-    #[cfg(all(feature = "all", not(any(target_os = "redox", target_os = "espidf"))))]
+    #[cfg(all(
+        feature = "all",
+        not(any(target_os = "redox", target_os = "espidf", target_os = "wasi"))
+    ))]
     #[cfg_attr(
         docsrs,
-        doc(cfg(all(feature = "all", not(any(target_os = "redox", target_os = "espidf")))))
+        doc(cfg(all(
+            feature = "all",
+            not(any(target_os = "redox", target_os = "espidf", target_os = "wasi"))
+        )))
     )]
     pub const RAW: Type = Type(sys::SOCK_RAW);
 }
@@ -306,9 +322,11 @@ impl From<Type> for c_int {
 pub struct Protocol(c_int);
 
 impl Protocol {
+    #[cfg(not(target_os = "wasi"))]
     /// Protocol corresponding to `ICMPv4`.
     pub const ICMPV4: Protocol = Protocol(sys::IPPROTO_ICMP);
 
+    #[cfg(not(target_os = "wasi"))]
     /// Protocol corresponding to `ICMPv6`.
     pub const ICMPV6: Protocol = Protocol(sys::IPPROTO_ICMPV6);
 
@@ -426,7 +444,12 @@ impl<'a> DerefMut for MaybeUninitSlice<'a> {
 #[derive(Debug, Clone)]
 pub struct TcpKeepalive {
     #[cfg_attr(
-        any(target_os = "openbsd", target_os = "haiku", target_os = "vita"),
+        any(
+            target_os = "openbsd",
+            target_os = "haiku",
+            target_os = "vita",
+            target_os = "wasi",
+        ),
         allow(dead_code)
     )]
     time: Option<Duration>,
@@ -438,6 +461,7 @@ pub struct TcpKeepalive {
         target_os = "espidf",
         target_os = "vita",
         target_os = "haiku",
+        target_os = "wasi",
     )))]
     interval: Option<Duration>,
     #[cfg(not(any(
@@ -449,6 +473,7 @@ pub struct TcpKeepalive {
         target_os = "espidf",
         target_os = "vita",
         target_os = "haiku",
+        target_os = "wasi",
     )))]
     retries: Option<u32>,
 }
@@ -466,6 +491,7 @@ impl TcpKeepalive {
                 target_os = "espidf",
                 target_os = "vita",
                 target_os = "haiku",
+                target_os = "wasi",
             )))]
             interval: None,
             #[cfg(not(any(
@@ -477,6 +503,7 @@ impl TcpKeepalive {
                 target_os = "espidf",
                 target_os = "vita",
                 target_os = "haiku",
+                target_os = "wasi",
             )))]
             retries: None,
         }
@@ -596,14 +623,14 @@ impl TcpKeepalive {
 ///
 /// This wraps `msghdr` on Unix and `WSAMSG` on Windows. Also see [`MsgHdrMut`]
 /// for the variant used by `recvmsg(2)`.
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 pub struct MsgHdr<'addr, 'bufs, 'control> {
     inner: sys::msghdr,
     #[allow(clippy::type_complexity)]
     _lifetimes: PhantomData<(&'addr SockAddr, &'bufs IoSlice<'bufs>, &'control [u8])>,
 }
 
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 impl<'addr, 'bufs, 'control> MsgHdr<'addr, 'bufs, 'control> {
     /// Create a new `MsgHdr` with all empty/zero fields.
     #[allow(clippy::new_without_default)]
@@ -653,7 +680,7 @@ impl<'addr, 'bufs, 'control> MsgHdr<'addr, 'bufs, 'control> {
     }
 }
 
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 impl<'name, 'bufs, 'control> fmt::Debug for MsgHdr<'name, 'bufs, 'control> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         "MsgHdr".fmt(fmt)
@@ -664,7 +691,7 @@ impl<'name, 'bufs, 'control> fmt::Debug for MsgHdr<'name, 'bufs, 'control> {
 ///
 /// This wraps `msghdr` on Unix and `WSAMSG` on Windows. Also see [`MsgHdr`] for
 /// the variant used by `sendmsg(2)`.
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 pub struct MsgHdrMut<'addr, 'bufs, 'control> {
     inner: sys::msghdr,
     #[allow(clippy::type_complexity)]
@@ -675,7 +702,7 @@ pub struct MsgHdrMut<'addr, 'bufs, 'control> {
     )>,
 }
 
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 impl<'addr, 'bufs, 'control> MsgHdrMut<'addr, 'bufs, 'control> {
     /// Create a new `MsgHdrMut` with all empty/zero fields.
     #[allow(clippy::new_without_default)]
@@ -721,7 +748,7 @@ impl<'addr, 'bufs, 'control> MsgHdrMut<'addr, 'bufs, 'control> {
     }
 }
 
-#[cfg(not(target_os = "redox"))]
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
 impl<'name, 'bufs, 'control> fmt::Debug for MsgHdrMut<'name, 'bufs, 'control> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         "MsgHdrMut".fmt(fmt)
