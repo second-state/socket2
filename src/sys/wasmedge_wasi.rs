@@ -375,6 +375,8 @@ pub(crate) fn keepalive_time(_fd: Socket) -> io::Result<Duration> {
 
 #[allow(unused_variables, unused)]
 pub(crate) fn set_tcp_keepalive(fd: Socket, keepalive: &TcpKeepalive) -> io::Result<()> {
+    let _ = keepalive.interval;
+    let _ = keepalive.retries;
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "operation not supported on this platform",
