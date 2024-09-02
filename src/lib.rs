@@ -461,7 +461,6 @@ pub struct TcpKeepalive {
         target_os = "espidf",
         target_os = "vita",
         target_os = "haiku",
-        target_os = "wasi",
     )))]
     interval: Option<Duration>,
     #[cfg(not(any(
@@ -473,7 +472,6 @@ pub struct TcpKeepalive {
         target_os = "espidf",
         target_os = "vita",
         target_os = "haiku",
-        target_os = "wasi",
     )))]
     retries: Option<u32>,
 }
@@ -491,7 +489,6 @@ impl TcpKeepalive {
                 target_os = "espidf",
                 target_os = "vita",
                 target_os = "haiku",
-                target_os = "wasi",
             )))]
             interval: None,
             #[cfg(not(any(
@@ -503,7 +500,6 @@ impl TcpKeepalive {
                 target_os = "espidf",
                 target_os = "vita",
                 target_os = "haiku",
-                target_os = "wasi",
             )))]
             retries: None,
         }
@@ -547,6 +543,7 @@ impl TcpKeepalive {
         target_os = "tvos",
         target_os = "watchos",
         target_os = "windows",
+        target_os = "wasi",
     ))]
     #[cfg_attr(
         docsrs,
@@ -563,6 +560,7 @@ impl TcpKeepalive {
             target_os = "tvos",
             target_os = "watchos",
             target_os = "windows",
+            target_os = "wasi",
         )))
     )]
     pub const fn with_interval(self, interval: Duration) -> Self {
@@ -590,6 +588,7 @@ impl TcpKeepalive {
             target_os = "netbsd",
             target_os = "tvos",
             target_os = "watchos",
+            target_os = "wasi",
         )
     ))]
     #[cfg_attr(
@@ -608,6 +607,7 @@ impl TcpKeepalive {
                 target_os = "netbsd",
                 target_os = "tvos",
                 target_os = "watchos",
+                target_os = "wasi",
             )
         )))
     )]
