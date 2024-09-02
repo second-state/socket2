@@ -11,21 +11,26 @@ use std::io::{self, Read, Write};
 #[cfg(not(target_os = "redox"))]
 use std::io::{IoSlice, IoSliceMut};
 use std::mem::MaybeUninit;
-#[cfg(not(target_os = "nto"))]
+#[cfg(not(any(target_os = "nto", target_os = "wasi")))]
 use std::net::Ipv6Addr;
 use std::net::{self, Ipv4Addr, Shutdown};
-#[cfg(unix)]
-use std::os::unix::io::{FromRawFd, IntoRawFd};
+#[cfg(not(windows))]
+use std::os::fd::{FromRawFd, IntoRawFd};
 #[cfg(windows)]
 use std::os::windows::io::{FromRawSocket, IntoRawSocket};
 use std::time::Duration;
 
-use crate::sys::{self, c_int, getsockopt, setsockopt, Bool};
-#[cfg(all(unix, not(target_os = "redox")))]
+use crate::sys::{self, c_int};
+#[cfg(not(target_os = "wasi"))]
+use crate::sys::{getsockopt, setsockopt, Bool};
+#[cfg(all(unix, not(any(target_os = "redox", target_os = "wasi"))))]
 use crate::MsgHdrMut;
 use crate::{Domain, Protocol, SockAddr, TcpKeepalive, Type};
-#[cfg(not(target_os = "redox"))]
-use crate::{MaybeUninitSlice, MsgHdr, RecvFlags};
+
+#[cfg(not(any(target_os = "redox", target_os = "wasi")))]
+use crate::MsgHdr;
+#[cfg(not(any(target_os = "redox")))]
+use crate::{MaybeUninitSlice, RecvFlags};
 
 /// Owned wrapper around a system socket.
 ///
@@ -339,6 +344,7 @@ impl Socket {
 
     /// Returns the [`Type`] of this socket by checking the `SO_TYPE` option on
     /// this socket.
+    #[cfg(not(target_os = "wasi"))]
     pub fn r#type(&self) -> io::Result<Type> {
         unsafe { getsockopt::<c_int>(self.as_raw(), sys::SOL_SOCKET, sys::SO_TYPE).map(Type) }
     }
@@ -356,6 +362,7 @@ impl Socket {
     /// On Windows this can **not** be used function cannot be used on a
     /// QOS-enabled socket, see
     /// <https://docs.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-wsaduplicatesocketw>.
+    #[cfg(not(target_os = "wasi"))]
     pub fn try_clone(&self) -> io::Result<Socket> {
         sys::try_clone(self.as_raw()).map(Socket::from_raw)
     }
@@ -368,8 +375,8 @@ impl Socket {
     /// `O_NONBLOCK`.
     ///
     /// On Windows it is not possible retrieve the nonblocking mode status.
-    #[cfg(all(feature = "all", unix))]
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "all", unix))))]
+    #[cfg(all(feature = "all", any(unix, target_os = "wasi")))]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "all", any(unix, target_os = "wasi")))))]
     pub fn nonblocking(&self) -> io::Result<bool> {
         sys::nonblocking(self.as_raw())
     }
@@ -427,6 +434,7 @@ impl Socket {
     ///
     /// [`recv`]: Socket::recv
     /// [`out_of_band_inline`]: Socket::out_of_band_inline
+    #[cfg(not(target_os = "wasi"))]
     #[cfg_attr(target_os = "redox", allow(rustdoc::broken_intra_doc_links))]
     pub fn recv_out_of_band(&self, buf: &mut [MaybeUninit<u8>]) -> io::Result<usize> {
         self.recv_with_flags(buf, sys::MSG_OOB)
@@ -636,8 +644,11 @@ impl Socket {
     /// <https://github.com/microsoft/Windows-classic-samples/blob/7cbd99ac1d2b4a0beffbaba29ea63d024ceff700/Samples/Win7Samples/netds/winsock/recvmsg/rmmc.cpp>
     /// for an example (in C++).
     #[doc = man_links!(recvmsg(2))]
-    #[cfg(all(unix, not(target_os = "redox")))]
-    #[cfg_attr(docsrs, doc(cfg(all(unix, not(target_os = "redox")))))]
+    #[cfg(all(unix, not(any(target_os = "redox", target_os = "wasi"))))]
+    #[cfg_attr(
+        docsrs,
+        doc(cfg(all(unix, not(any(target_os = "redox", target_os = "wasi")))))
+    )]
     pub fn recvmsg(&self, msg: &mut MsgHdrMut<'_, '_, '_>, flags: sys::c_int) -> io::Result<usize> {
         sys::recvmsg(self.as_raw(), msg, flags)
     }
@@ -690,6 +701,7 @@ impl Socket {
     ///
     /// [`send`]: Socket::send
     /// [`out_of_band_inline`]: Socket::out_of_band_inline
+    #[cfg(not(target_os = "wasi"))]
     #[cfg_attr(target_os = "redox", allow(rustdoc::broken_intra_doc_links))]
     pub fn send_out_of_band(&self, buf: &[u8]) -> io::Result<usize> {
         self.send_with_flags(buf, sys::MSG_OOB)
@@ -743,8 +755,8 @@ impl Socket {
 
     /// Send a message on a socket using a message structure.
     #[doc = man_links!(sendmsg(2))]
-    #[cfg(not(target_os = "redox"))]
-    #[cfg_attr(docsrs, doc(cfg(not(target_os = "redox"))))]
+    #[cfg(not(any(target_os = "redox", target_os = "wasi")))]
+    #[cfg_attr(docsrs, doc(cfg(not(any(target_os = "redox", target_os = "wasi")))))]
     pub fn sendmsg(&self, msg: &MsgHdr<'_, '_, '_>, flags: sys::c_int) -> io::Result<usize> {
         sys::sendmsg(self.as_raw(), msg, flags)
     }
@@ -794,6 +806,7 @@ fn set_common_flags(socket: Socket) -> io::Result<Socket> {
             target_os = "openbsd",
             target_os = "espidf",
             target_os = "vita",
+            target_os = "wasi",
         ))
     ))]
     socket._set_cloexec(true)?;
@@ -834,6 +847,7 @@ pub enum InterfaceIndexOrAddress {
 /// Additional documentation can be found in documentation of the OS.
 /// * Linux: <https://man7.org/linux/man-pages/man7/socket.7.html>
 /// * Windows: <https://docs.microsoft.com/en-us/windows/win32/winsock/sol-socket-socket-options>
+#[cfg(not(target_os = "wasi"))]
 impl Socket {
     /// Get the value of the `SO_BROADCAST` option for this socket.
     ///
@@ -1111,6 +1125,7 @@ impl Socket {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 const fn from_linger(linger: sys::linger) -> Option<Duration> {
     if linger.l_onoff == 0 {
         None
@@ -1119,6 +1134,7 @@ const fn from_linger(linger: sys::linger) -> Option<Duration> {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 const fn into_linger(duration: Option<Duration>) -> sys::linger {
     match duration {
         Some(duration) => sys::linger {
@@ -1137,6 +1153,7 @@ const fn into_linger(duration: Option<Duration>) -> sys::linger {
 /// Additional documentation can be found in documentation of the OS.
 /// * Linux: <https://man7.org/linux/man-pages/man7/ip.7.html>
 /// * Windows: <https://docs.microsoft.com/en-us/windows/win32/winsock/ipproto-ip-socket-options>
+#[cfg(not(target_os = "wasi"))]
 impl Socket {
     /// Get the value of the `IP_HDRINCL` option on this socket.
     ///
@@ -1650,6 +1667,7 @@ impl Socket {
 /// Additional documentation can be found in documentation of the OS.
 /// * Linux: <https://man7.org/linux/man-pages/man7/ipv6.7.html>
 /// * Windows: <https://docs.microsoft.com/en-us/windows/win32/winsock/ipproto-ipv6-socket-options>
+#[cfg(not(target_os = "wasi"))]
 impl Socket {
     /// Join a multicast group using `IPV6_ADD_MEMBERSHIP` option on this socket.
     ///
@@ -2107,9 +2125,17 @@ impl Socket {
     ///
     /// [`set_nodelay`]: Socket::set_nodelay
     pub fn nodelay(&self) -> io::Result<bool> {
+        #[cfg(not(target_os = "wasi"))]
         unsafe {
             getsockopt::<Bool>(self.as_raw(), sys::IPPROTO_TCP, sys::TCP_NODELAY)
                 .map(|nodelay| nodelay != 0)
+        }
+        #[cfg(target_os = "wasi")]
+        {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "operation not supported on this platform",
+            ))
         }
     }
 
@@ -2121,6 +2147,7 @@ impl Socket {
     /// sufficient amount to send out, thereby avoiding the frequent sending of
     /// small packets.
     pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
+        #[cfg(not(target_os = "wasi"))]
         unsafe {
             setsockopt(
                 self.as_raw(),
@@ -2128,6 +2155,14 @@ impl Socket {
                 sys::TCP_NODELAY,
                 nodelay as c_int,
             )
+        }
+        #[cfg(target_os = "wasi")]
+        {
+            let _ = nodelay;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "operation not supported on this platform",
+            ))
         }
     }
 }
